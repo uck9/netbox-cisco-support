@@ -1,4 +1,5 @@
 {% load filters %}
+{% load helpers %}
 
 {% if cisco_device_type_support %}
     <div class="card">
@@ -33,6 +34,13 @@
                     <tr {{ cisco_device_type_support.last_date_of_support|expiration_class }}>
                         <td>Last Date of Support</td>
                         <td>{{ cisco_device_type_support.last_date_of_support }}</td>
+                    </tr>
+                    <tr>
+                        <td>Support Information Last Updated</td>
+                        <td><span>{{ cisco_device_type_support.last_updated|annotated_date }}</span> 
+                            <span class="separator">&middot;</span>
+                            <span>({{ cisco_device_type_support.last_updated|timesince }} ago)</span>
+                        </td>
                     </tr>
                 </tbody>
             </table>

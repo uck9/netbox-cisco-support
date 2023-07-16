@@ -13,14 +13,19 @@ from netbox_cisco_support.models import CiscoDeviceTypeSupport, CiscoSupport
 
 
 class Command(BaseCommand):
-    help = 'Sync local devices with Cisco EoX Support API'
+    help = 'Sync local devices with Cisco EoX Support API - V0.6'
 
     def add_arguments(self, parser):
+
+        PLUGIN_SETTINGS = settings.PLUGINS_CONFIG.get("netbox_cisco_support", dict())
+
         # Named (optional) arguments
+        # Allow custom manufacturer to be specified
         parser.add_argument(
             '--manufacturer',
-            action='store_true',
-            default='Cisco',
+            nargs='?',
+            action='store',
+            default=PLUGIN_SETTINGS.get("manufacturer", "Cisco"),
             help='Manufacturer name (default: Cisco)',
         )
     
@@ -33,39 +38,42 @@ class Command(BaseCommand):
             help='Specify what EoX Data to be synced from Cisco',
         )
 
-        # Allow user to enable debugging - Cisco API output will be
-        # written to log file in /var/log
+        # Allow user to enable debugging - API output written to /tmp
         parser.add_argument(
             '--debug',
             action='store_true',
             default=False,  
-            help='Specify what EoX Data to be synced from Cisco',
+            help='Dump API Responses to files in /tmp',
         )
 
-    # Generic Function to parse the Device EoX API response
-    def parse_eox_device_response(self, nb_obj, nb_obj_field_name, nb_obj_field_type, eox_api_response_key, eox_api_response, value_changed):
+    # Generic Function to parse the Device EoX API response for the supplied key
+    def parse_eox_device_response(self, nb_obj, nb_obj_field_name, nb_obj_field_type, eox_api_response_key, eox_api_response):
 
         try:
-            if not eox_api_response[eox_api_response_key]:
-                self.stdout.write(self.style.NOTICE(eox_api_response['sr_no'] + " has no key named - " + eox_api_response_key))
+            if (eox_api_response.get(eox_api_response_key) == None):
+                self.stdout.write(self.style.NOTICE(eox_api_response['sr_no'] + " api response had no key - " + eox_api_response_key))
+                setattr(nb_obj, nb_obj_field_name, None)
+                return nb_obj
             else:
                 resp_key_value = eox_api_response[eox_api_response_key]
+                
                 self.stdout.write(self.style.SUCCESS(eox_api_response['sr_no'] + " - " + eox_api_response_key +" - " + resp_key_value))
 
                 if (nb_obj_field_type == 'date'):
-                    resp_key_value = datetime.strptime(resp_key_value, '%Y-%m-%d').date()
+                    if not (resp_key_value == ''):
+                        resp_key_value = datetime.strptime(resp_key_value, '%Y-%m-%d').date()
+                    else: 
+                        resp_key_value = None
 
                 obj_attrib_value = getattr(nb_obj, nb_obj_field_name)
                 if obj_attrib_value != resp_key_value:
                     setattr(nb_obj, nb_obj_field_name, resp_key_value)
-                    value_changed = True
                 
-                return nb_obj, value_changed
+                return nb_obj
             
         except KeyError:
             self.stdout.write(self.style.NOTICE(eox_api_response['sr_no'] + " has no key named - " + eox_api_response_key))
-            return nb_object, value_changed
-
+            return nb_obj
 
     # Updates a single device with current EoX Data
     def update_device_eox_data(self, device):
@@ -97,26 +105,49 @@ class Command(BaseCommand):
         # Check if the Coverage in the CiscoSupport object equals API answer. If not, change it
         if ds.is_covered != covered:
             ds.is_covered = covered
-            value_changed = True
 
         # Parse the Date values in the reponse
-        ds, value_changed = self.parse_eox_device_response(ds, 'warranty_end_date', 'date', 'warranty_end_date', device, value_changed)
-        ds, value_changed = self.parse_eox_device_response(ds, 'coverage_end_date', 'date', 'covered_product_line_end_date', device, value_changed)
+        ds = self.parse_eox_device_response(ds, 'warranty_end_date', 'date', 'warranty_end_date', device)
+        ds = self.parse_eox_device_response(ds, 'coverage_end_date', 'date', 'covered_product_line_end_date', device)
 
         # Parse the String values in the reponse
-        ds, value_changed = self.parse_eox_device_response(ds, 'warranty_type', 'string', 'warranty_type', device, value_changed)
-        ds, value_changed = self.parse_eox_device_response(ds, 'service_line_description', 'string', 'service_line_descr', device, value_changed)
-        ds, value_changed = self.parse_eox_device_response(ds, 'service_contract_number', 'string', 'service_contract_number', device, value_changed)
-        ds, value_changed = self.parse_eox_device_response(ds, 'contract_site_customer_name', 'string', 'contract_site_customer_name', device, value_changed)
-        ds, value_changed = self.parse_eox_device_response(ds, 'contract_site_address1', 'string', 'contract_site_address1', device, value_changed)
-        ds, value_changed = self.parse_eox_device_response(ds, 'contract_site_city', 'string', 'contract_site_city', device, value_changed)
-        ds, value_changed = self.parse_eox_device_response(ds, 'contract_site_state_province', 'string', 'contract_site_state_province', device, value_changed)
-        ds, value_changed = self.parse_eox_device_response(ds, 'contract_site_country', 'string', 'contract_site_country', device, value_changed)
+        ds = self.parse_eox_device_response(ds, 'warranty_type', 'string', 'warranty_type', device)
+        ds = self.parse_eox_device_response(ds, 'service_line_description', 'string', 'service_line_descr', device)
+        ds = self.parse_eox_device_response(ds, 'service_contract_number', 'string', 'service_contract_number', device)
+        ds = self.parse_eox_device_response(ds, 'contract_site_customer_name', 'string', 'contract_site_customer_name', device)
+        ds = self.parse_eox_device_response(ds, 'contract_site_address1', 'string', 'contract_site_address1', device)
+        ds = self.parse_eox_device_response(ds, 'contract_site_city', 'string', 'contract_site_city', device)
+        ds = self.parse_eox_device_response(ds, 'contract_site_state_province', 'string', 'contract_site_state_province', device)
+        ds = self.parse_eox_device_response(ds, 'contract_site_country', 'string', 'contract_site_country', device)
         
-        #if value_changed:
         ds.save()
 
         return 
+
+    # Generic Function to parse the DeviceType EoX API response for the supplied key
+    def parse_eox_devicetype_response(self, pid, nb_obj, nb_obj_field_name, eox_api_response_key, eox_api_response):
+
+        try:
+            if not eox_api_response["EOXRecord"][0][eox_api_response_key]["value"]:
+                self.stdout.write(self.style.NOTICE(pid + " has no key - " + eox_api_response_key))
+            else:
+                resp_key_value_string = eox_api_response["EOXRecord"][0][eox_api_response_key]["value"]
+                self.stdout.write(self.style.SUCCESS(pid + " - " + eox_api_response_key +" - " + resp_key_value_string))
+
+                # Convert String Date to a datetime object
+                resp_key_value = datetime.strptime(resp_key_value_string, '%Y-%m-%d').date()
+
+                obj_attrib_value = getattr(nb_obj, nb_obj_field_name)
+                if obj_attrib_value != resp_key_value:
+                    setattr(nb_obj, nb_obj_field_name, resp_key_value)
+                    
+                return nb_obj
+            
+        except KeyError:
+            self.stdout.write(self.style.NOTICE(pid + " has no key - " + eox_api_response_key))
+            setattr(nb_obj, nb_obj_field_name, None)
+    
+            return nb_obj
 
     def update_device_type_eox_data(self, pid, eox_data):
 
@@ -137,129 +168,16 @@ class Command(BaseCommand):
         except CiscoDeviceTypeSupport.DoesNotExist:
             dts = CiscoDeviceTypeSupport(device_type=dt)
 
-        # Only save if something has changed
-        value_changed = False
+        # parse_eox_devicetype_response(self, pid, nb_obj, nb_obj_field_name, eox_api_response_key, eox_api_response, value_changed):
+        self.parse_eox_devicetype_response(pid, dts, "end_of_sale_date", "EndOfSaleDate", eox_data) 
+        self.parse_eox_devicetype_response(pid, dts, "end_of_sw_maintenance_releases", "EndOfSWMaintenanceReleases", eox_data) 
+        self.parse_eox_devicetype_response(pid, dts, "end_of_security_vul_support_date", "EndOfSecurityVulSupportDate", eox_data) 
+        self.parse_eox_devicetype_response(pid, dts, "end_of_routine_failure_analysis_date", "EndOfRoutineFailureAnalysisDate", eox_data) 
+        self.parse_eox_devicetype_response(pid, dts, "end_of_service_contract_renewal", "EndOfServiceContractRenewal", eox_data)
+        self.parse_eox_devicetype_response(pid, dts, "last_date_of_support", "LastDateOfSupport", eox_data)
+        self.parse_eox_devicetype_response(pid, dts, "end_of_svc_attach_date", "EndOfSvcAttachDate", eox_data)
 
-        try:
-            # Check if JSON contains EndOfSaleDate with value field
-            if not eox_data["EOXRecord"][0]["EndOfSaleDate"]["value"]:
-                self.stdout.write(self.style.NOTICE("%s has no end_of_sale_date" % pid))
-            else:
-                end_of_sale_date_string = eox_data["EOXRecord"][0]["EndOfSaleDate"]["value"]
-                # Cast this value to datetime.date object
-                end_of_sale_date = datetime.strptime(end_of_sale_date_string, '%Y-%m-%d').date()
-                self.stdout.write(self.style.SUCCESS("%s - end_of_sale_date: %s" % (pid, end_of_sale_date)))
-
-                # Check if CiscoDeviceTypeSupport end_of_sale_date differs from JSON EndOfSaleDate, update if true
-                if dts.end_of_sale_date != end_of_sale_date:
-                    dts.end_of_sale_date = end_of_sale_date
-                    value_changed = True
-
-        # Do nothing when JSON field does not exist
-        except KeyError:
-            self.stdout.write(self.style.NOTICE("%s has no end_of_sale_date" % pid))
-            dts.end_of_sale_date = None
-            value_changed = True                    
-
-        try:
-            if not eox_data["EOXRecord"][0]["EndOfSWMaintenanceReleases"]["value"]:
-                self.stdout.write(self.style.NOTICE("%s has no end_of_sw_maintenance_releases" % pid))
-            else:
-                end_of_sw_maintenance_releases_string = eox_data["EOXRecord"][0]["EndOfSWMaintenanceReleases"]["value"]
-                end_of_sw_maintenance_releases = datetime.strptime(end_of_sw_maintenance_releases_string, '%Y-%m-%d').date()
-                self.stdout.write(self.style.SUCCESS("%s - end_of_sw_maintenance_releases: %s" % (pid, end_of_sw_maintenance_releases)))
-
-                if dts.end_of_sw_maintenance_releases != end_of_sw_maintenance_releases:
-                    dts.end_of_sw_maintenance_releases = end_of_sw_maintenance_releases
-                    value_changed = True
-        except KeyError:
-            self.stdout.write(self.style.NOTICE("%s has no end_of_sw_maintenance_releases" % pid))
-            dts.end_of_sw_maintenance_releases = None
-            value_changed = True                  
-
-        try:
-            if not eox_data["EOXRecord"][0]["EndOfSecurityVulSupportDate"]["value"]:
-                self.stdout.write(self.style.NOTICE("%s has no end_of_security_vul_support_date" % pid))
-            else:
-                end_of_security_vul_support_date_string = eox_data["EOXRecord"][0]["EndOfSecurityVulSupportDate"]["value"]
-                end_of_security_vul_support_date = datetime.strptime(end_of_security_vul_support_date_string, '%Y-%m-%d').date()
-                self.stdout.write(self.style.SUCCESS("%s - end_of_security_vul_support_date: %s" % (pid, end_of_security_vul_support_date)))
-
-                if dts.end_of_security_vul_support_date != end_of_security_vul_support_date:
-                    dts.end_of_security_vul_support_date = end_of_security_vul_support_date
-                    value_changed = True
-        except KeyError:
-            self.stdout.write(self.style.NOTICE("%s has no end_of_security_vul_support_date" % pid))
-            dts.end_of_security_vul_support_date = None
-            value_changed = True                  
-
-        try:
-            if not eox_data["EOXRecord"][0]["EndOfRoutineFailureAnalysisDate"]["value"]:
-                self.stdout.write(self.style.NOTICE("%s has no end_of_routine_failure_analysis_date" % pid))
-            else:
-                end_of_routine_failure_analysis_date_string = eox_data["EOXRecord"][0]["EndOfRoutineFailureAnalysisDate"]["value"]
-                end_of_routine_failure_analysis_date = datetime.strptime(end_of_routine_failure_analysis_date_string, '%Y-%m-%d').date()
-                self.stdout.write(self.style.SUCCESS("%s - end_of_routine_failure_analysis_date: %s" % (pid, end_of_routine_failure_analysis_date)))
-
-                if dts.end_of_routine_failure_analysis_date != end_of_routine_failure_analysis_date:
-                    dts.end_of_routine_failure_analysis_date = end_of_routine_failure_analysis_date
-                    value_changed = True
-        except KeyError:
-            self.stdout.write(self.style.NOTICE("%s has no end_of_routine_failure_analysis_date" % pid))
-            dts.end_of_routine_failure_analysis_date = None
-            value_changed = True                    
-
-        try:
-            if not eox_data["EOXRecord"][0]["EndOfServiceContractRenewal"]["value"]:
-                self.stdout.write(self.style.NOTICE("%s has no end_of_service_contract_renewal" % pid))
-            else:
-                end_of_service_contract_renewal_string = eox_data["EOXRecord"][0]["EndOfServiceContractRenewal"]["value"]
-                end_of_service_contract_renewal = datetime.strptime(end_of_service_contract_renewal_string, '%Y-%m-%d').date()
-                self.stdout.write(self.style.SUCCESS("%s - end_of_service_contract_renewal: %s" % (pid, end_of_service_contract_renewal)))
-
-                if dts.end_of_service_contract_renewal != end_of_service_contract_renewal:
-                    dts.end_of_service_contract_renewal = end_of_service_contract_renewal
-                    value_changed = True
-        except KeyError:
-            self.stdout.write(self.style.NOTICE("%s has no end_of_service_contract_renewal" % pid))
-            dts.end_of_service_contract_renewal = None
-            value_changed = True
-                    
-
-        try:
-            if not eox_data["EOXRecord"][0]["LastDateOfSupport"]["value"]:
-                self.stdout.write(self.style.NOTICE("%s has no last_date_of_support" % pid))
-            else:
-                last_date_of_support_string = eox_data["EOXRecord"][0]["LastDateOfSupport"]["value"]
-                last_date_of_support = datetime.strptime(last_date_of_support_string, '%Y-%m-%d').date()
-                self.stdout.write(self.style.SUCCESS("%s - last_date_of_support: %s" % (pid, last_date_of_support)))
-
-                if dts.last_date_of_support != last_date_of_support:
-                    dts.last_date_of_support = last_date_of_support
-                    value_changed = True
-        except KeyError:
-            self.stdout.write(self.style.NOTICE("%s has no last_date_of_support" % pid))
-            dts.last_date_of_support = None
-            value_changed = True                    
-
-        try:
-            if not eox_data["EOXRecord"][0]["EndOfSvcAttachDate"]["value"]:
-                self.stdout.write(self.style.NOTICE("%s has no end_of_svc_attach_date" % pid))
-            else:
-                end_of_svc_attach_date_string = eox_data["EOXRecord"][0]["EndOfSvcAttachDate"]["value"]
-                end_of_svc_attach_date = datetime.strptime(end_of_svc_attach_date_string, '%Y-%m-%d').date()
-                self.stdout.write(self.style.SUCCESS("%s - end_of_svc_attach_date: %s" % (pid, end_of_svc_attach_date)))
-
-                if dts.end_of_svc_attach_date != end_of_svc_attach_date:
-                    dts.end_of_svc_attach_date = end_of_svc_attach_date
-                    value_changed = True
-        except KeyError:
-            self.stdout.write(self.style.NOTICE("%s has no end_of_svc_attach_date" % pid))
-            dts.end_of_svc_attach_date = None
-            value_changed = True
-
-        if value_changed:
-            dts.save()
+        dts.save()
 
         return
 
@@ -302,7 +220,7 @@ class Command(BaseCommand):
 
     def get_serial_numbers(self, manufacturer):
         serial_numbers = []
-
+        
         # Get all device types for supplied manufacturer
         dt = self.get_device_types(manufacturer)
 
@@ -344,15 +262,16 @@ class Command(BaseCommand):
 
     # Main entry point for the sync_eox_data command of manage.py
     def handle(self, *args, **kwargs):
-        PLUGIN_SETTINGS = settings.PLUGINS_CONFIG.get("netbox_cisco_support", dict())
-        MANUFACTURER = PLUGIN_SETTINGS.get("manufacturer", "Cisco")
+        #PLUGIN_SETTINGS = settings.PLUGINS_CONFIG.get("netbox_cisco_support", dict())
+        #MANUFACTURER = PLUGIN_SETTINGS.get("manufacturer", "Cisco")
+        manufacturer = kwargs["manufacturer"]
 
         # Logon one time and gather the required API key
         api_call_headers = self.logon()
 
         if (kwargs["sync_type"] == "all" or kwargs["sync_type"] == "devicetypes"):
             # Step 1: Get all PIDs for all Device Types of that particular manufacturer
-            product_ids = self.get_product_ids(MANUFACTURER)
+            product_ids = self.get_product_ids(manufacturer)
             self.stdout.write(self.style.SUCCESS('Gathering data for these PIDs: ' + ', '.join(product_ids)))
 
             i = 1
@@ -360,8 +279,6 @@ class Command(BaseCommand):
                 url = 'https://apix.cisco.com/supporttools/eox/rest/5/EOXByProductID/1/%s?responseencoding=json' % pid
                 api_call_response = requests.get(url, headers=api_call_headers)
                 self.stdout.write(self.style.SUCCESS('Call ' + url))
-
-                
 
                 # debug API answer to text file if debugging enabled
                 if (kwargs["debug"] == True):
@@ -391,7 +308,7 @@ class Command(BaseCommand):
 
         if (kwargs["sync_type"] == "all" or kwargs["sync_type"] == "devices"):
             # Step 2: Get all Serial Numbers for all Devices of that particular manufacturer
-            serial_numbers = self.get_serial_numbers(MANUFACTURER)
+            serial_numbers = self.get_serial_numbers(manufacturer)
             self.stdout.write(self.style.SUCCESS('Gathering data for these Serial Numbers: ' + ', '.join(serial_numbers)))
 
             i = 1
