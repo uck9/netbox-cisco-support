@@ -23,6 +23,49 @@ class Command(BaseCommand):
             default='Cisco',
             help='Manufacturer name (default: Cisco)',
         )
+    
+        # Allow user to specify the type of Sync to run
+        parser.add_argument(
+            '--sync_type',
+            nargs='?',
+            choices=['all', 'devicetypes', 'devices'],
+            default='all',  
+            help='Specify what EoX Data to be synced from Cisco',
+        )
+
+        # Allow user to enable debugging - Cisco API output will be
+        # written to log file in /var/log
+        parser.add_argument(
+            '--debug',
+            action='store_true',
+            default=False,  
+            help='Specify what EoX Data to be synced from Cisco',
+        )
+
+    # Generic Function to parse the Device EoX API response
+    def parse_eox_device_response(self, nb_obj, nb_obj_field_name, nb_obj_field_type, eox_api_response_key, eox_api_response, value_changed):
+
+        try:
+            if not eox_api_response[eox_api_response_key]:
+                self.stdout.write(self.style.NOTICE(eox_api_response['sr_no'] + " has no key named - " + eox_api_response_key))
+            else:
+                resp_key_value = eox_api_response[eox_api_response_key]
+                self.stdout.write(self.style.SUCCESS(eox_api_response['sr_no'] + " - " + eox_api_response_key +" - " + resp_key_value))
+
+                if (nb_obj_field_type == 'date'):
+                    resp_key_value = datetime.strptime(resp_key_value, '%Y-%m-%d').date()
+
+                obj_attrib_value = getattr(nb_obj, nb_obj_field_name)
+                if obj_attrib_value != resp_key_value:
+                    setattr(nb_obj, nb_obj_field_name, resp_key_value)
+                    value_changed = True
+                
+                return nb_obj, value_changed
+            
+        except KeyError:
+            self.stdout.write(self.style.NOTICE(eox_api_response['sr_no'] + " has no key named - " + eox_api_response_key))
+            return nb_object, value_changed
+
 
     # Updates a single device with current EoX Data
     def update_device_eox_data(self, device):
@@ -56,38 +99,24 @@ class Command(BaseCommand):
             ds.is_covered = covered
             value_changed = True
 
-        try:
-            if not device['warranty_end_date']:
-                self.stdout.write(self.style.NOTICE("%s has no warranty_end_date" % device['sr_no']))
-            else:
-                warranty_end_date_string = device['warranty_end_date']
-                warranty_end_date = datetime.strptime(warranty_end_date_string, '%Y-%m-%d').date()
-                self.stdout.write(self.style.SUCCESS("%s - warranty_end_date: %s" % (device['sr_no'], warranty_end_date)))
+        # Parse the Date values in the reponse
+        ds, value_changed = self.parse_eox_device_response(ds, 'warranty_end_date', 'date', 'warranty_end_date', device, value_changed)
+        ds, value_changed = self.parse_eox_device_response(ds, 'coverage_end_date', 'date', 'covered_product_line_end_date', device, value_changed)
 
-                if ds.warranty_end_date != warranty_end_date:
-                    ds.warranty_end_date = warranty_end_date
-                    value_changed = True
-        except KeyError:
-            self.stdout.write(self.style.NOTICE("%s has no warranty_end_date" % device['sr_no']))
+        # Parse the String values in the reponse
+        ds, value_changed = self.parse_eox_device_response(ds, 'warranty_type', 'string', 'warranty_type', device, value_changed)
+        ds, value_changed = self.parse_eox_device_response(ds, 'service_line_description', 'string', 'service_line_descr', device, value_changed)
+        ds, value_changed = self.parse_eox_device_response(ds, 'service_contract_number', 'string', 'service_contract_number', device, value_changed)
+        ds, value_changed = self.parse_eox_device_response(ds, 'contract_site_customer_name', 'string', 'contract_site_customer_name', device, value_changed)
+        ds, value_changed = self.parse_eox_device_response(ds, 'contract_site_address1', 'string', 'contract_site_address1', device, value_changed)
+        ds, value_changed = self.parse_eox_device_response(ds, 'contract_site_city', 'string', 'contract_site_city', device, value_changed)
+        ds, value_changed = self.parse_eox_device_response(ds, 'contract_site_state_province', 'string', 'contract_site_state_province', device, value_changed)
+        ds, value_changed = self.parse_eox_device_response(ds, 'contract_site_country', 'string', 'contract_site_country', device, value_changed)
+        
+        #if value_changed:
+        ds.save()
 
-        try:
-            if not device['covered_product_line_end_date']:
-                self.stdout.write(self.style.NOTICE("%s has no covered_product_line_end_date" % device['sr_no']))
-            else:
-                coverage_end_date_string = device['covered_product_line_end_date']
-                coverage_end_date = datetime.strptime(coverage_end_date_string, '%Y-%m-%d').date()
-                self.stdout.write(self.style.SUCCESS("%s - coverage_end_date: %s" % (device['sr_no'], coverage_end_date)))
-
-                if ds.coverage_end_date != coverage_end_date:
-                    ds.coverage_end_date = coverage_end_date
-                    value_changed = True
-        except KeyError:
-            self.stdout.write(self.style.NOTICE("%s has no coverage_end_date" % device['sr_no']))
-
-        if value_changed:
-            ds.save()
-
-        return
+        return 
 
     def update_device_type_eox_data(self, pid, eox_data):
 
@@ -129,6 +158,8 @@ class Command(BaseCommand):
         # Do nothing when JSON field does not exist
         except KeyError:
             self.stdout.write(self.style.NOTICE("%s has no end_of_sale_date" % pid))
+            dts.end_of_sale_date = None
+            value_changed = True                    
 
         try:
             if not eox_data["EOXRecord"][0]["EndOfSWMaintenanceReleases"]["value"]:
@@ -143,6 +174,8 @@ class Command(BaseCommand):
                     value_changed = True
         except KeyError:
             self.stdout.write(self.style.NOTICE("%s has no end_of_sw_maintenance_releases" % pid))
+            dts.end_of_sw_maintenance_releases = None
+            value_changed = True                  
 
         try:
             if not eox_data["EOXRecord"][0]["EndOfSecurityVulSupportDate"]["value"]:
@@ -157,6 +190,8 @@ class Command(BaseCommand):
                     value_changed = True
         except KeyError:
             self.stdout.write(self.style.NOTICE("%s has no end_of_security_vul_support_date" % pid))
+            dts.end_of_security_vul_support_date = None
+            value_changed = True                  
 
         try:
             if not eox_data["EOXRecord"][0]["EndOfRoutineFailureAnalysisDate"]["value"]:
@@ -171,6 +206,8 @@ class Command(BaseCommand):
                     value_changed = True
         except KeyError:
             self.stdout.write(self.style.NOTICE("%s has no end_of_routine_failure_analysis_date" % pid))
+            dts.end_of_routine_failure_analysis_date = None
+            value_changed = True                    
 
         try:
             if not eox_data["EOXRecord"][0]["EndOfServiceContractRenewal"]["value"]:
@@ -185,6 +222,9 @@ class Command(BaseCommand):
                     value_changed = True
         except KeyError:
             self.stdout.write(self.style.NOTICE("%s has no end_of_service_contract_renewal" % pid))
+            dts.end_of_service_contract_renewal = None
+            value_changed = True
+                    
 
         try:
             if not eox_data["EOXRecord"][0]["LastDateOfSupport"]["value"]:
@@ -199,6 +239,8 @@ class Command(BaseCommand):
                     value_changed = True
         except KeyError:
             self.stdout.write(self.style.NOTICE("%s has no last_date_of_support" % pid))
+            dts.last_date_of_support = None
+            value_changed = True                    
 
         try:
             if not eox_data["EOXRecord"][0]["EndOfSvcAttachDate"]["value"]:
@@ -213,6 +255,8 @@ class Command(BaseCommand):
                     value_changed = True
         except KeyError:
             self.stdout.write(self.style.NOTICE("%s has no end_of_svc_attach_date" % pid))
+            dts.end_of_svc_attach_date = None
+            value_changed = True
 
         if value_changed:
             dts.save()
@@ -306,71 +350,89 @@ class Command(BaseCommand):
         # Logon one time and gather the required API key
         api_call_headers = self.logon()
 
-        # Step 1: Get all PIDs for all Device Types of that particular manufacturer
-        product_ids = self.get_product_ids(MANUFACTURER)
-        self.stdout.write(self.style.SUCCESS('Gathering data for these PIDs: ' + ', '.join(product_ids)))
+        if (kwargs["sync_type"] == "all" or kwargs["sync_type"] == "devicetypes"):
+            # Step 1: Get all PIDs for all Device Types of that particular manufacturer
+            product_ids = self.get_product_ids(MANUFACTURER)
+            self.stdout.write(self.style.SUCCESS('Gathering data for these PIDs: ' + ', '.join(product_ids)))
 
-        i = 1
-        for pid in product_ids:
-            url = 'https://apix.cisco.com/supporttools/eox/rest/5/EOXByProductID/1/%s?responseencoding=json' % pid
-            api_call_response = requests.get(url, headers=api_call_headers)
-            self.stdout.write(self.style.SUCCESS('Call ' + url))
+            i = 1
+            for pid in product_ids:
+                url = 'https://apix.cisco.com/supporttools/eox/rest/5/EOXByProductID/1/%s?responseencoding=json' % pid
+                api_call_response = requests.get(url, headers=api_call_headers)
+                self.stdout.write(self.style.SUCCESS('Call ' + url))
 
-            # sanatize file name
-            filename = django.utils.text.get_valid_filename('%s.json' % pid)
+                
 
-            # debug API answer to text file
-            # with open('/source/netbox_cisco_support/api-answer/%s' % filename, 'w') as outfile:
-            #    outfile.write(api_call_response.text)
+                # debug API answer to text file if debugging enabled
+                if (kwargs["debug"] == True):
+                    # sanitize file name
+                    filename = django.utils.text.get_valid_filename('%s.json' % pid)
 
-            # Validate response from Cisco 
-            if api_call_response.status_code == 200:
+                    # write data to file
+                    with open('/tmp/%s' % filename, 'w') as outfile:
+                        outfile.write(api_call_response.text)
 
-                # Deserialize JSON API Response into Python object "data"
-                data = json.loads(api_call_response.text)
+                # Validate response from Cisco 
+                if api_call_response.status_code == 200:
 
-                # Call our Device Type Update method for that particular PID
-                self.update_device_type_eox_data(pid, data)
+                    # Deserialize JSON API Response into Python object "data"
+                    data = json.loads(api_call_response.text)
 
-                i += 1
+                    # Call our Device Type Update method for that particular PID
+                    self.update_device_type_eox_data(pid, data)
 
-            else:
+                    i += 1
 
-                # Show an error
-                self.stdout.write(self.style.ERROR('API Error: ' + api_call_response.text))
+                else:
+
+                    # Show an error
+                    self.stdout.write(self.style.ERROR('API Error: ' + api_call_response.text))
 
 
-        # Step 2: Get all Serial Numbers for all Devices of that particular manufacturer
-        serial_numbers = self.get_serial_numbers(MANUFACTURER)
-        self.stdout.write(self.style.SUCCESS('Gathering data for these Serial Numbers: ' + ', '.join(serial_numbers)))
+        if (kwargs["sync_type"] == "all" or kwargs["sync_type"] == "devices"):
+            # Step 2: Get all Serial Numbers for all Devices of that particular manufacturer
+            serial_numbers = self.get_serial_numbers(MANUFACTURER)
+            self.stdout.write(self.style.SUCCESS('Gathering data for these Serial Numbers: ' + ', '.join(serial_numbers)))
 
-        i = 1
-        while serial_numbers:
-            # Pop the first items_to_fetch items of serial_numbers into current_slice and then delete them from serial
-            # numbers. We want to pass x items to the API each time we call it
-            items_to_fetch = 10
-            current_slice = serial_numbers[:items_to_fetch]
-            serial_numbers[:items_to_fetch] = []
+            i = 1
+            while serial_numbers:
+                # Pop the first items_to_fetch items of serial_numbers into current_slice and then delete them from serial
+                # numbers. We want to pass x items to the API each time we call it
+                items_to_fetch = 10
+                current_slice = serial_numbers[:items_to_fetch]
+                serial_numbers[:items_to_fetch] = []
 
-            url = 'https://apix.cisco.com/sn2info/v2/coverage/summary/serial_numbers/%s' % ','.join(current_slice)
-            api_call_response = requests.get(url, headers=api_call_headers)
-            self.stdout.write(self.style.SUCCESS('Call ' + url))
+                url = 'https://apix.cisco.com/sn2info/v2/coverage/summary/serial_numbers/%s' % ','.join(current_slice)
+                api_call_response = requests.get(url, headers=api_call_headers)
+                self.stdout.write(self.style.SUCCESS('Call ' + url))
 
-            # Validate response from Cisco 
-            if api_call_response.status_code == 200:
+                # Validate response from Cisco 
+                if api_call_response.status_code == 200:
 
-                # Deserialize JSON API Response into Python object "data"
-                data = json.loads(api_call_response.text)
+                    # Deserialize JSON API Response into Python object "data"
+                    data = json.loads(api_call_response.text)
 
-                # Iterate through all serial numbers included in the API response
-                for device in data['serial_numbers']:
+                    # debug API answer to text file if debugging enabled
+                    if (kwargs["debug"] == True):
 
-                    # Call our Device Update method for that particular Device
-                    self.update_device_eox_data(device)
+                        self.stdout.write(self.style.SUCCESS('Debugging Enabled - API Response written to log in /tmp'))
 
-                i += 1
-            
-            else:
+                        # sanitize file name
+                        filename = django.utils.text.get_valid_filename('%s.json' % '-'.join(current_slice))
 
-                # Show an error
-                self.stdout.write(self.style.ERROR('API Error: ' + api_call_response.text))
+                        # write api response to file
+                        with open('/tmp/%s' % filename, 'w') as outfile:
+                            outfile.write(api_call_response.text)
+
+                    # Iterate through all serial numbers included in the API response
+                    for device in data['serial_numbers']:
+
+                        # Call our Device Update method for that particular Device
+                        self.update_device_eox_data(device)
+
+                    i += 1
+                
+                else:
+
+                    # Show an error
+                    self.stdout.write(self.style.ERROR('API Error: ' + api_call_response.text))

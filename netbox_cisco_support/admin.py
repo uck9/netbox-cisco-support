@@ -21,6 +21,14 @@ class CiscoSupportAdmin(admin.ModelAdmin):
     list_display = (
         "device",
         "is_covered",
+        "service_contract_number",
+        "service_line_description",
         "coverage_end_date",
-        "warranty_end_date"
+        "warranty_end_date",
+        "warranty_type",
+        "contract_site_address1",
+        "contract_site_city",
+        "contract_site_country", 
+        "contract_site_customer_name", 
+        "contract_site_state_province",
     )

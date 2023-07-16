@@ -1,8 +1,9 @@
 {% load filters %}
+{% load helpers %}
 
 {% if cisco_device_support %}
     <div class="card">
-        <h5 class="card-header">Cisco Device Support Information</h5>
+        <h5 class="card-header">Cisco Device - Support Information</h5>
         <div class="card-body">
             <table class="table table-hover panel-body attr-table">
                 <tbody>
@@ -10,13 +11,42 @@
                         <td style="width: 40%">Is Covered by Contract?</td>
                         <td><i class="mdi {% if cisco_device_support.is_covered %}mdi-check-bold text-success{% else %}mdi-close-thick text-danger{% endif %}"></i></td>
                     </tr>
+                    <tr {{ cisco_device_support.service_contract_number }}>
+                        <td>Service Contract Number</td>
+                        <td>{{ cisco_device_support.service_contract_number }}</td>
+                    </tr>
+                    <tr {{ cisco_device_support.service_line_description }}>
+                        <td>Service Contract Number</td>
+                        <td>{{ cisco_device_support.service_line_description }}</td>
+                    </tr>
                     <tr {{ cisco_device_support.coverage_end_date|expiration_class }}>
                         <td>End of Contract Coverage Date</td>
                         <td>{{ cisco_device_support.coverage_end_date }}</td>
                     </tr>
+                    <tr {{ cisco_device_support.warranty_type }}>
+                        <td>Warranty Type</td>
+                        <td>{{ cisco_device_support.warranty_type }}</td>
+                    </tr>
                     <tr {{ cisco_device_support.warranty_end_date|expiration_class }}>
                         <td>End of Warranty Date</td>
                         <td>{{ cisco_device_support.warranty_end_date }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Installed at Address</th>
+                        <td>{{ cisco_device_support.contract_site_customer_name }}<br />
+                            <small class="text-muted">{{ cisco_device_support.contract_site_address1 }}<br />
+                                {{ cisco_device_support.contract_site_city }}  
+                                {{ cisco_device_support.contract_site_state_province }}  
+                                {{ cisco_device_support.contract_site_country }}
+                            </small>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Support Info Last Updated:</td>
+                        <td><span>{{ cisco_device_support.last_updated|annotated_date }}</span> 
+                            <span class="separator">&middot;</span>
+                            <span>({{ cisco_device_support.last_updated|timesince }} ago)</span>
+                        </td>
                     </tr>
                 </tbody>
             </table>

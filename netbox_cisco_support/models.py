@@ -77,6 +77,20 @@ class CiscoSupport(ChangeLoggedModel):
     def __str__(self):
         return "%s Support" % self.device
 
+    service_contract_number = models.CharField(
+        help_text="Cisco Service Contract Number for the specified serial number",
+        max_length=200,
+        blank=True,
+        null=True
+    )
+
+    service_line_description = models.CharField(
+        help_text="Cisco Service Description for the specified serial number",
+        max_length=20,
+        blank=True,
+        null=True
+    )
+
     coverage_end_date = models.DateField(
         help_text='End date of the contract coverage for the specifed serial number',
         blank=True,
@@ -89,4 +103,47 @@ class CiscoSupport(ChangeLoggedModel):
         null=True
     )
 
+    warranty_type = models.CharField(
+        help_text="Warranty Type for the specified serial number",
+        max_length=20,
+        blank=True,
+        null=True
+    )
+
+    contract_site_address1 = models.CharField(
+        help_text="Installed At Location - Site Address",
+        max_length=100,
+        blank=True,
+        null=True
+    )
+    
+    contract_site_city = models.CharField(
+        help_text="Installed At Location - City",
+        max_length=20,
+        blank=True,
+        null=True
+    )
+
+    contract_site_country = models.CharField(
+        help_text="Installed At Location - Country",
+        max_length=20,
+        blank=True,
+        null=True
+    )
+
+    contract_site_customer_name = models.CharField(
+        help_text="Installed At Location - Customer Name",
+        max_length=100,
+        blank=True,
+        null=True
+    )
+
+    contract_site_state_province = models.CharField(
+        help_text="Installed At Location - State / Province",
+        max_length=20,
+        blank=True,
+        null=True
+    )
+    
+    
     is_covered = models.BooleanField(help_text='Indicates whether the specified serial number is covered by a service contract', default=False)
